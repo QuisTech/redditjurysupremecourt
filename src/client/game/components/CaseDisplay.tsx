@@ -73,26 +73,33 @@ const CaseDisplay: React.FC<CaseDisplayProps> = ({ caseData, dateKey }) => {
     const generateJudicialOpinion = async (vote: VoteType, cData: CaseData) => {
     setLoadingAI(true);
     try {
-        // CALLING BACKEND VIA FETCH (Bridge)
-        const response = await fetch('/api/verdict', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                vote: vote.replace('_', ' '),
-                caseTitle: cData.title
-            }),
-        });
+        // Use pre-written verdicts from case data (for standalone deployment)
+        const caseWithVerdicts = cData as CaseData & { verdicts?: { Guilty: string; NotGuilty: string; Abstain: string } };
         
-        const data = await response.json();
-        
-        if (data.analysis) {
-             setAiAnalysis(data.analysis);
-             updateHistoryWithAi(cData.id, data.analysis);
+        let analysisText = '';
+        if (caseWithVerdicts.verdicts) {
+            // Map vote to verdict key
+            const voteNormalized = vote.replace('_', ' ').toLowerCase();
+            if (voteNormalized.includes('guilty') && !voteNormalized.includes('not')) {
+                analysisText = caseWithVerdicts.verdicts.Guilty;
+            } else if (voteNormalized.includes('not guilty')) {
+                analysisText = caseWithVerdicts.verdicts.NotGuilty;
+            } else if (voteNormalized.includes('abstain')) {
+                analysisText = caseWithVerdicts.verdicts.Abstain;
+            } else {
+                // Fallback
+                analysisText = caseWithVerdicts.verdicts.Abstain;
+            }
+            
+            // Add formatting
+            analysisText = `**THE RULING**\n\n${analysisText}`;
         } else {
-             setAiAnalysis("The Court is in recess. (API Error)");
+            // Generic fallback if case doesn't have pre-written verdicts
+            analysisText = `**THE RULING**\n\nThe Court acknowledges your vote of "${vote.replace('_', ' ')}". After reviewing the evidence in "${cData.title}", we have determined that justice has been served by your participation today. The archives are updated.`;
         }
+        
+        setAiAnalysis(analysisText);
+        updateHistoryWithAi(cData.id, analysisText);
     } catch (error) {
         setAiAnalysis("The Court is in recess. Justice remains blind.");
     }
