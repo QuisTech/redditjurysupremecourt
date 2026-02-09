@@ -1,6 +1,5 @@
-
 import React, { useState, useRef } from 'react';
-import { generatePromoMaterial } from '../services/directorService';
+import { generatePromoMaterial, OFFLINE_TUTORIAL_DATA } from '../services/directorService';
 import { CaseData } from '../types';
 
 interface DirectorOverlayProps {
@@ -9,7 +8,7 @@ interface DirectorOverlayProps {
 }
 
 export const DirectorOverlay: React.FC<DirectorOverlayProps> = ({ onResetApp, currentCase }) => {
-  const [status, setStatus] = useState<'IDLE' | 'GENERATING' | 'READY' | 'RECORDING' | 'FINISHED'>('IDLE');
+  const [status, setStatus] = useState<'IDLE' | 'GENERATING' | 'READY' | 'RECORDING' | 'FINISHED' | 'TUTORIAL'>('IDLE');
   const [script, setScript] = useState<string>("");
   const [audioData, setAudioData] = useState<string | null>(null);
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
@@ -114,19 +113,34 @@ export const DirectorOverlay: React.FC<DirectorOverlayProps> = ({ onResetApp, cu
     });
   };
 
-  const executeSequence = async () => {
-    setStatus('RECORDING');
+  const playTTS = (text: string): Promise<void> => {
+    return new Promise((resolve) => {
+        if (!window.speechSynthesis) {
+            setTimeout(resolve, 2000);
+            return;
+        }
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.9;
+        utterance.pitch = 1.0;
+        utterance.onend = () => resolve();
+        window.speechSynthesis.speak(utterance);
+    });
+  };
+
+  const executeSequence = async (isTutorial = false) => {
+    setStatus(isTutorial ? 'TUTORIAL' : 'RECORDING');
 
     // 1. Reset App & Clear UI
     onResetApp();
     await new Promise(r => setTimeout(r, 2000));
 
-    // 2. Start Narrative (Intro) - AWAIT THIS so it doesn't overlap
-    if (audioData) {
+    // 2. Start Narrative (Intro)
+    if (isTutorial) {
+        await playTTS(OFFLINE_TUTORIAL_DATA.script);
+    } else if (audioData) {
        await playAudio(audioData); 
-       // Short pause for dramatic effect after intro
-       await new Promise(r => setTimeout(r, 500));
     }
+    await new Promise(r => setTimeout(r, 500));
 
     // 3. Scripted Judicial Walkthrough
     await simulateClick('nav-today');
@@ -166,7 +180,11 @@ export const DirectorOverlay: React.FC<DirectorOverlayProps> = ({ onResetApp, cu
 
     // Cinematic wrap
     setTimeout(() => {
-        finishRecording();
+        if (isTutorial) {
+            setStatus('IDLE');
+        } else {
+            finishRecording();
+        }
     }, 4000);
   };
 
@@ -202,12 +220,17 @@ export const DirectorOverlay: React.FC<DirectorOverlayProps> = ({ onResetApp, cu
       mediaRecorder.onstop = saveVideo;
       mediaRecorder.start();
       
-      void executeSequence();
+      void executeSequence(false);
 
     } catch (err) {
       console.error(err);
       setErrorMsg("Recording cancelled or not supported.");
     }
+  };
+
+  const startTutorial = () => {
+      setScript(OFFLINE_TUTORIAL_DATA.script);
+      void executeSequence(true);
   };
 
   const finishRecording = () => {
@@ -229,16 +252,24 @@ export const DirectorOverlay: React.FC<DirectorOverlayProps> = ({ onResetApp, cu
 
   if (status === 'IDLE') {
     return (
-      <button 
-        onClick={prepareDemo}
-        className="fixed bottom-4 right-4 bg-black text-white px-4 py-2 rounded-full font-black text-[10px] uppercase tracking-[0.2em] hover:scale-105 transition-transform z-50 border-2 border-white shadow-2xl flex items-center gap-2 group"
-      >
-        <span className="group-hover:rotate-12 transition-transform">📽️</span> Director's Mode
-      </button>
+      <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3">
+        <button 
+          onClick={startTutorial}
+          className="bg-white text-black px-4 py-2 rounded-full font-black text-[10px] uppercase tracking-[0.2em] hover:scale-105 transition-transform border-2 border-black shadow-xl flex items-center gap-2 group"
+        >
+          <span className="group-hover:animate-bounce">🎓</span> How to Play
+        </button>
+        <button 
+          onClick={prepareDemo}
+          className="bg-black text-white px-4 py-2 rounded-full font-black text-[10px] uppercase tracking-[0.2em] hover:scale-105 transition-transform border-2 border-white shadow-xl flex items-center gap-2 group"
+        >
+          <span className="group-hover:rotate-12 transition-transform">📽️</span> Director's Mode
+        </button>
+      </div>
     );
   }
 
-  if (status === 'RECORDING') {
+  if (status === 'RECORDING' || status === 'TUTORIAL') {
       return (
           <>
             {/* High-Fidelity Virtual Cursor */}
@@ -268,11 +299,27 @@ export const DirectorOverlay: React.FC<DirectorOverlayProps> = ({ onResetApp, cu
                 <div className="text-white text-center max-w-2xl animate-in slide-in-from-bottom-8 duration-700">
                     <div className="flex items-center justify-center gap-2 mb-3">
                         <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse"></span>
-                        <div className="text-[10px] font-black uppercase text-red-500 tracking-[0.4em] drop-shadow-lg">Official Judicial Narration</div>
+                        <div className="text-[10px] font-black uppercase text-red-500 tracking-[0.4em] drop-shadow-lg">
+                            {status === 'TUTORIAL' ? 'Tutorial Mode' : 'Official Judicial Narration'}
+                        </div>
                     </div>
+                    {/* 
+                      For Tutorial, we might NOT have logic to display dynamic subtitles sync'd with TTS unless handled manually.
+                      We just show the intro script for now or the same text.
+                    */}
                     <p className="text-xl font-bold drop-shadow-2xl leading-relaxed bg-black/40 px-8 py-4 rounded-3xl backdrop-blur-xl border border-white/10 italic">
                         "{script}"
                     </p>
+                    
+                    {status === 'TUTORIAL' && (
+                        <button 
+                            // Hack to stop tutorial: just reload/reset or simple state reset logic (might need more robust cancellation)
+                            onClick={() => window.location.reload()} 
+                            className="mt-4 pointer-events-auto bg-white/20 hover:bg-white/40 text-xs px-4 py-2 rounded-full font-bold uppercase tracking-widest backdrop-blur-md"
+                        >
+                            End Tutorial
+                        </button>
+                    )}
                 </div>
             </div>
           </>

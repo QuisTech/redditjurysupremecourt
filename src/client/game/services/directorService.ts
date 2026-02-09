@@ -38,3 +38,9 @@ export const generatePromoMaterial = async (currentCase: CaseData) => {
     return { script: 'Order in the court.', audio: null };
   }
 };
+
+export const OFFLINE_TUTORIAL_DATA = {
+  script:
+    "Welcome to the Supreme Court of Reddit. Here, you are the judge. Review the evidence, cast your vote, and shape the community's justice.",
+  introAudio: null, // Will use Browser TTS
+};
