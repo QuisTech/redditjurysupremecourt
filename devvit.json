@@ -2,6 +2,13 @@
   "$schema": "https://developers.reddit.com/schema/config-file.v1.json",
   "name": "jurysupremecourt",
   "permissions": {
+    "reddit": {
+      "features": [
+        "identity",
+        "submit",
+        "read"
+      ]
+    },
     "http": {
       "domains": ["generativelanguage.googleapis.com"]
     }
